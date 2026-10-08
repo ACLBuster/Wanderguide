@@ -1,0 +1,6 @@
+export async function preparePhoto(file:File):Promise<string>{
+ if(!/^image\/(jpeg|png|webp)$/.test(file.type))throw new Error('Please choose a JPG, PNG, or WebP photo. For HEIC, export it as JPG first.');
+ if(file.size>25*1024*1024)throw new Error('Please choose a photo smaller than 25 MB.');
+ const url=URL.createObjectURL(file);
+ try{const image=new Image();image.src=url;await image.decode();const scale=Math.min(1,1400/Math.max(image.width,image.height));const canvas=document.createElement('canvas');canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Your browser couldn’t prepare this photo. Try another browser.');ctx.drawImage(image,0,0,canvas.width,canvas.height);let quality=.84;let result=canvas.toDataURL('image/jpeg',quality);while(result.length>2_800_000&&quality>.3){quality-=.15;result=canvas.toDataURL('image/jpeg',quality);}if(result.length>2_800_000)throw new Error('Please choose a smaller photo.');return result;}catch(e){if(e instanceof Error&&e.message.startsWith('Please'))throw e;throw new Error('We couldn’t open this photo. Please try a different JPG or PNG.');}finally{URL.revokeObjectURL(url);}
+}

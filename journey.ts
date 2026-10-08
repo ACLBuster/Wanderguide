@@ -1,0 +1,5 @@
+import type {Visit} from './types';
+const DB='wanderguide-journey';
+function open():Promise<IDBDatabase>{return new Promise((resolve,reject)=>{const req=indexedDB.open(DB,1);req.onupgradeneeded=()=>req.result.createObjectStore('visits',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+export async function loadVisits():Promise<Visit[]>{const db=await open();return new Promise((resolve,reject)=>{const tx=db.transaction('visits','readonly');const req=tx.objectStore('visits').getAll();req.onsuccess=()=>resolve((req.result as Visit[]).sort((a,b)=>b.visitedAt.localeCompare(a.visitedAt)));req.onerror=()=>reject(req.error);tx.oncomplete=()=>db.close();});}
+export async function saveVisits(visits:Visit[]){const db=await open();return new Promise<void>((resolve,reject)=>{const tx=db.transaction('visits','readwrite');const store=tx.objectStore('visits');store.clear();visits.forEach(v=>store.put(v));tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>{db.close();reject(tx.error);};});}

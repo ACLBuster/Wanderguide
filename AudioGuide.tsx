@@ -1,0 +1,12 @@
+'use client';
+import {useEffect,useRef,useState} from 'react';
+import {Headphones,Pause,Play,RotateCcw} from 'lucide-react';
+export function AudioGuide({text,trigger=0,compact=false}:{text:string;trigger?:number;compact?:boolean}){
+ const [state,setState]=useState<'idle'|'playing'|'paused'>('idle');const [rate,setRate]=useState(1);const [available,setAvailable]=useState(false);const [error,setError]=useState('');const utterance=useRef<SpeechSynthesisUtterance|null>(null);
+ useEffect(()=>{setAvailable('speechSynthesis' in window);return ()=>{if('speechSynthesis'in window)window.speechSynthesis.cancel();};},[]);
+ useEffect(()=>{if('speechSynthesis'in window)window.speechSynthesis.cancel();setState('idle');},[text]);
+ function play(restart=false,newRate=rate){if(!('speechSynthesis'in window))return;if(!restart&&state==='paused'){speechSynthesis.resume();setState('playing');return;}if(!restart&&state==='playing'){speechSynthesis.pause();setState('paused');return;}speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=newRate;u.onend=()=>setState('idle');u.onerror=e=>{setState('idle');if(e.error!=='interrupted'&&e.error!=='canceled')setError('Audio is unavailable. You can read the guide below.');};utterance.current=u;speechSynthesis.speak(u);setState('playing');setError('');}
+ useEffect(()=>{if(trigger)play();/* Trigger is an explicit user action. */ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[trigger]);
+ return <div className={`audio-guide ${compact?'compact':''}`}><div className="audio-icon"><Headphones size={21}/></div><div className="audio-title"><strong>{compact?'Listen to this answer':'Let the place tell its story'}</strong><span>{available?`${Math.max(1,Math.round(text.split(/\s+/).length/150))} min audio guide`:'Read the story below · audio unsupported'}</span></div><button className="listen-button" disabled={!available} onClick={()=>play()} aria-label={state==='playing'?'Pause narration':'Listen to narration'}>{state==='playing'?<Pause size={18}/>:<Play size={18}/>}<span>{state==='playing'?'Pause':state==='paused'?'Resume':'Listen'}</span></button><button className="icon-button" aria-label="Restart narration" disabled={!available} onClick={()=>play(true)}><RotateCcw size={17}/></button><select aria-label="Playback speed" value={rate} onChange={e=>{const r=Number(e.target.value);setRate(r);if(state!=='idle')play(true,r);}}>{[.75,1,1.25,1.5].map(r=><option key={r} value={r}>{r}×</option>)}</select>{error&&<p role="status">{error}</p>}</div>;
+}

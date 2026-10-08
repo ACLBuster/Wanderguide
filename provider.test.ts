@@ -1,0 +1,43 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {guideProvider,type GuideRequest} from '../src/lib/ai/provider';
+import {sample} from '../src/lib/sample';
+
+test('Gemini-compatible provider preserves vision, schema and conversation context',async t=>{
+ const originalFetch=globalThis.fetch;
+ const originalEnv={AI_API_KEY:process.env.AI_API_KEY,AI_BASE_URL:process.env.AI_BASE_URL,AI_MODEL:process.env.AI_MODEL};
+ t.after(()=>{globalThis.fetch=originalFetch;for(const [key,value] of Object.entries(originalEnv)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
+ process.env.AI_API_KEY='test-key';
+ process.env.AI_BASE_URL='https://generativelanguage.googleapis.com/v1beta/openai/';
+ process.env.AI_MODEL='gemini-test-model';
+ const input:GuideRequest={action:'identify',image:'data:image/jpeg;base64,/9j/AAAAAAAAAAAA',mode:'Architecture',location:{lat:41.89,lng:12.49},messages:[],journey:[]};
+ let body:Record<string,any>={};let endpoint='';let headers:HeadersInit|undefined;
+ const reply=(content:unknown,finish_reason='stop',refusal?:string)=>{globalThis.fetch=async (url,init)=>{endpoint=String(url);headers=init?.headers;body=JSON.parse(String(init?.body));return Response.json({choices:[{finish_reason,message:{content,refusal}}]});};};
+ reply(JSON.stringify(sample));
+ assert.deepEqual(await guideProvider.respond(input),sample);
+ assert.equal(endpoint,'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+ assert.equal(new Headers(headers).get('Authorization'),'Bearer test-key');
+ assert.equal(body.model,'gemini-test-model');
+ assert.equal(body.messages[0].role,'system');
+ assert.deepEqual(body.messages[1].content[1],{type:'image_url',image_url:{url:input.image}});
+ assert.equal(body.response_format.type,'json_schema');
+ assert.equal(body.response_format.json_schema.name,'attraction');
+ assert.equal('input' in body,false);assert.equal('max_output_tokens' in body,false);
+ process.env.AI_BASE_URL='https://generativelanguage.googleapis.com/v1beta/openai';
+ reply('Notice the repeating arches.');
+ const messages=[{role:'user' as const,content:'Who built this?'},{role:'assistant' as const,content:'The Flavian emperors.'},{role:'user' as const,content:'Tell me more.'}];
+ assert.deepEqual(await guideProvider.respond({...input,action:'chat',attraction:sample,messages}),{text:'Notice the repeating arches.'});
+ assert.deepEqual(body.messages.slice(2),messages);
+ assert.equal(body.response_format,undefined);
+ assert.equal(JSON.parse(body.messages[1].content[0].text).attraction.name,sample.name);
+ assert.ok(endpoint.endsWith('/openai/chat/completions'));
+ await guideProvider.respond({...input,action:'narrate',attraction:sample});
+ assert.match(JSON.parse(body.messages[1].content[0].text).task,/Retell/);
+ for(const finish of ['length','content_filter']){reply('partial',finish);await assert.rejects(()=>guideProvider.respond(input),/PROVIDER_FAILED/);}
+ reply('', 'stop');await assert.rejects(()=>guideProvider.respond(input),/PROVIDER_FAILED/);
+ reply('answer','stop','refused');await assert.rejects(()=>guideProvider.respond(input),/PROVIDER_FAILED/);
+ reply('{"name":"incomplete"}');await assert.rejects(()=>guideProvider.respond(input));
+ globalThis.fetch=async()=>new Response(null,{status:429});await assert.rejects(()=>guideProvider.respond(input),/BUSY/);
+ globalThis.fetch=async()=>new Response(null,{status:500});await assert.rejects(()=>guideProvider.respond(input),/PROVIDER_FAILED/);
+ delete process.env.AI_API_KEY;await assert.rejects(()=>guideProvider.respond(input),/NOT_CONFIGURED/);
+});
